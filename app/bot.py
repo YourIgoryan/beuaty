@@ -368,11 +368,25 @@ async def confirm_booking(callback: CallbackQuery, state: FSMContext):
                 await state.clear()
                 return
             master_id = free_master.id
-        booking = Booking(client_id=client.id, service_id=service.id, master_id=master_id,
-                          starts_at=start, ends_at=end, status='confirmed')
-        session.add(booking)
-        await session.commit()
-        booking_id = booking.id
+            # Порядковый номер записи отдельно для каждого клиента.
+            previous_bookings = (
+                await session.execute(
+                    select(Booking.id).where(Booking.client_id == client.id)
+                )
+            ).all()
+            booking_number = len(previous_bookings) + 1
+
+            booking = Booking(
+                client_id=client.id,
+                service_id=service.id,
+                master_id=master_id,
+                starts_at=start,
+                ends_at=end,
+                status='confirmed'
+            )
+            session.add(booking)
+            await session.commit()
+            booking_id = booking.id
         master = await session.get(Master, master_id) if master_id else None
         admin_ids = settings.admin_id_set
         client_name = client.name
@@ -381,11 +395,11 @@ async def confirm_booking(callback: CallbackQuery, state: FSMContext):
         price = service.price
     await state.clear()
     await callback.message.edit_text(
-        f"<b>Запись №{booking_id} подтверждена!</b>\n\n{service_name}\n{start.strftime('%d.%m.%Y')} в {start.strftime('%H:%M')}\nМастер: {master.name if master else 'Не назначен'}\nТелефон: {client_phone}\nСтоимость: {price:,} ₽\n\nЖдём вас!".replace(',', ' '),
+        f"<b>Запись №{booking_number} подтверждена!</b>\n\n{service_name}\n{start.strftime('%d.%m.%Y')} в {start.strftime('%H:%M')}\nМастер: {master.name if master else 'Не назначен'}\nТелефон: {client_phone}\nСтоимость: {price:,} ₽\n\nЖдём вас!".replace(',', ' '),
         reply_markup=kb([[('🗓 Мои записи', 'my_bookings')], [('⬅️ В меню', 'home')]]))
     for admin_id in admin_ids:
         try:
-            await bot.send_message(admin_id, f"🆕 <b>Новая запись №{booking_id}</b>\nКлиент: {client_name} (@{callback.from_user.username or 'нет username'})\nТелефон: {client_phone or 'не указан'}\nУслуга: {service_name}\nДата: {start.strftime('%d.%m.%Y %H:%M')}\nМастер: {master.name if master else 'Не назначен'}")
+            await bot.send_message(admin_id, f"🆕 <b>Новая запись №{booking_number}</b>\nКлиент: {client_name} (@{callback.from_user.username or 'нет username'})\nТелефон: {client_phone or 'не указан'}\nУслуга: {service_name}\nДата: {start.strftime('%d.%m.%Y %H:%M')}\nМастер: {master.name if master else 'Не назначен'}")
         except Exception:
             pass
     await callback.answer()
